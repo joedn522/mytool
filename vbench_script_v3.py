@@ -44,7 +44,7 @@ if os.path.exists(score_file):
 with open(input_tsv, "r") as f:
     reader = csv.reader(f, delimiter="\t")
     for row in tqdm(reader, desc="Processing videos"):
-        time.sleep(10)  # let docker live longer for debugging
+        time.sleep(3)  # let docker live longer for debugging
         if len(row) < 3:
             print(f"[SKIP] Malformed row: {row}")
             continue
@@ -92,6 +92,7 @@ with open(input_tsv, "r") as f:
             try:
                 subprocess.run([
                     "vbench", "evaluate",
+                    "--ngpus", "1",
                     "--videos_path", local_file,
                     "--dimension", dim,
                     "--mode", "custom_input",
@@ -115,6 +116,7 @@ with open(input_tsv, "r") as f:
                 if result_json and dim in result_json and isinstance(result_json[dim], list):
                     if len(result_json[dim]) > 1 and isinstance(result_json[dim][1], dict):
                         score_row[dim] = result_json[dim][1].get("video_results", "N/A")
+                        print(f"[INFO] Score for {video_id} - {dim}: {score_row[dim]}") 
                     else:
                         print(f"[WARN] Score missing or malformed for {video_id} - {dim}")
                         score_row[dim] = "N/A"
