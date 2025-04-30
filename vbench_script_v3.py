@@ -5,12 +5,14 @@ import argparse
 import json
 import time
 from tqdm import tqdm
+import imageio_ffmpeg
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--input_tsv", required=True, help="Input TSV file with video_path, video_id, video_url")
 args = parser.parse_args()
 input_tsv = args.input_tsv
 
+local_dir = "./tmp"
 output_dir = "./evaluation_results"
 progress_file = "progress.txt"
 score_file = "scores.csv"
@@ -42,7 +44,7 @@ if os.path.exists(score_file):
 with open(input_tsv, "r") as f:
     reader = csv.reader(f, delimiter="\t")
     for row in tqdm(reader, desc="Processing videos"):
-        time.sleep(10)
+        time.sleep(10)  # let docker live longer for debugging
         if len(row) < 3:
             print(f"[SKIP] Malformed row: {row}")
             continue
@@ -53,21 +55,24 @@ with open(input_tsv, "r") as f:
             continue
 
         print(f"\n=== Processing {video_id} === vvvvv")
-        local_file = video_path
+        local_file = video_path  # use first column as the actual full video path
 
         if not os.path.exists(local_file):
-            print(f"[WARN] Local file not found for {video_path}, skipping.")
+            print(f"[WARN] No local file for {video_id}, skipping.")
             continue
 
-        # Convert .mov to .mp4
+        # Convert .mov to .mp4 using imageio_ffmpeg
         if local_file.endswith(".mov"):
             mp4_file = f"{local_file}.mp4"
             if not os.path.exists(mp4_file):
                 print(f"[INFO] Converting {local_file} ➜ {mp4_file}")
                 try:
+                    ffmpeg_exe = imageio_ffmpeg.get_ffmpeg_exe()
                     subprocess.run([
-                        "ffmpeg", "-i", local_file, "-c:v", "libx264", "-preset", "fast",
-                        "-crf", "22", "-c:a", "aac", "-b:a", "128k", mp4_file
+                        ffmpeg_exe, "-i", local_file,
+                        "-c:v", "libx264", "-preset", "fast", "-crf", "22",
+                        "-c:a", "aac", "-b:a", "128k",
+                        mp4_file
                     ], check=True)
                 except subprocess.CalledProcessError:
                     print(f"[ERROR] ffmpeg failed for {video_id}")
@@ -99,24 +104,24 @@ with open(input_tsv, "r") as f:
 
             # Extract score
             try:
-                result_file = os.path.join(dim_dir, "eval_results.json")
-                if os.path.exists(result_file):
-                    with open(result_file, "r") as f:
+                result_file = os.path.join(dim_dir, "results_*.json")
+                fallback_file = os.path.join(dim_dir, "eval_results.json")
+
+                result_json = None
+                if os.path.exists(fallback_file):
+                    with open(fallback_file, "r") as f:
                         result_json = json.load(f)
 
-                    if dim in result_json:
-                        video_result_list = result_json[dim][1]
-                        if isinstance(video_result_list, list) and len(video_result_list) > 0:
-                            score_row[dim] = video_result_list[0].get("video_results", "N/A")
-                        else:
-                            print(f"[WARN] No video_results list for {video_id} - {dim}")
-                            score_row[dim] = "N/A"
+                if result_json and dim in result_json and isinstance(result_json[dim], list):
+                    if len(result_json[dim]) > 1 and isinstance(result_json[dim][1], dict):
+                        score_row[dim] = result_json[dim][1].get("video_results", "N/A")
                     else:
-                        print(f"[WARN] Score missing key for {video_id} - {dim}")
+                        print(f"[WARN] Score missing or malformed for {video_id} - {dim}")
                         score_row[dim] = "N/A"
                 else:
-                    print(f"[WARN] Result file not found for {video_id} - {dim}")
+                    print(f"[WARN] Result file not found or incomplete for {video_id} - {dim}")
                     score_row[dim] = "N/A"
+
             except Exception as e:
                 print(f"[ERROR] Failed to parse result for {video_id} - {dim}: {e}")
                 score_row[dim] = "ERROR"
