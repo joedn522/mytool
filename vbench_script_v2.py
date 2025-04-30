@@ -43,6 +43,7 @@ if os.path.exists(score_file):
 with open(input_tsv, "r") as f:
     reader = csv.reader(f, delimiter="\t")
     for row in tqdm(reader, desc="Processing videos"):
+        time.sleep(10)
         if len(row) < 3:
             print(f"[SKIP] Malformed row: {row}")
             continue
@@ -52,7 +53,7 @@ with open(input_tsv, "r") as f:
         if video_id in completed_tasks:
             continue
 
-        print(f"\n=== Processing {video_id} ===")
+        print(f"\n=== Processing {video_id} === vvvvv")
         local_file = None
         for ext in [".mov", ".mp4"]:
             candidate = os.path.join(local_dir, f"{video_id}{ext}")
@@ -134,4 +135,4 @@ with open(input_tsv, "r") as f:
 
         print(f"[DONE] {video_id}: {score_row}")
 
-        time.sleep(10)
+        
