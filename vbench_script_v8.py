@@ -20,7 +20,7 @@ results = []
 with open(args.input_tsv, "r") as f:
     reader = csv.reader(f, delimiter="\t")
     for idx, row in enumerate(tqdm(reader, desc="Processing videos")):
-        if idx >= 3:  # 只處理前 3 筆
+        if idx >= 2:
             break
 
         if len(row) < 3:
