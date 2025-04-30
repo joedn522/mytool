@@ -11,7 +11,6 @@ parser.add_argument("--input_tsv", required=True, help="Input TSV file with vide
 args = parser.parse_args()
 input_tsv = args.input_tsv
 
-local_dir = "./tmp"
 output_dir = "./evaluation_results"
 progress_file = "progress.txt"
 score_file = "scores.csv"
@@ -54,15 +53,10 @@ with open(input_tsv, "r") as f:
             continue
 
         print(f"\n=== Processing {video_id} === vvvvv")
-        local_file = None
-        for ext in [".mov", ".mp4"]:
-            candidate = os.path.join(local_dir, f"{video_id}{ext}")
-            if os.path.exists(candidate):
-                local_file = candidate
-                break
+        local_file = video_path
 
-        if not local_file:
-            print(f"[WARN] No local file for {video_id}, skipping.")
+        if not os.path.exists(local_file):
+            print(f"[WARN] Local file not found for {video_path}, skipping.")
             continue
 
         # Convert .mov to .mp4
@@ -105,18 +99,17 @@ with open(input_tsv, "r") as f:
 
             # Extract score
             try:
-                result_files = os.listdir(dim_dir)
-                result_json = None
-                for file in result_files:
-                    if file.endswith("eval_results.json"):
-                        with open(os.path.join(dim_dir, file), "r") as f:
-                            result_json = json.load(f)
-                        break
-
-                if result_json and dim in result_json and len(result_json[dim]) > 1:
-                    score_row[dim] = result_json[dim][1]["video_results"]
+                result_file = os.path.join(dim_dir, "eval_results.json")
+                if os.path.exists(result_file):
+                    with open(result_file, "r") as f:
+                        result_json = json.load(f)
+                    if dim in result_json and len(result_json[dim]) > 1:
+                        score_row[dim] = result_json[dim][1].get("video_results", "N/A")
+                    else:
+                        print(f"[WARN] Score missing key for {video_id} - {dim}")
+                        score_row[dim] = "N/A"
                 else:
-                    print(f"[WARN] Score not found for {video_id} - {dim}")
+                    print(f"[WARN] Result file not found for {video_id} - {dim}")
                     score_row[dim] = "N/A"
             except Exception as e:
                 print(f"[ERROR] Failed to parse result for {video_id} - {dim}: {e}")
@@ -134,5 +127,3 @@ with open(input_tsv, "r") as f:
             f.write(f"{video_id}\n")
 
         print(f"[DONE] {video_id}: {score_row}")
-
-        
