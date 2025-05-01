@@ -52,7 +52,7 @@ with open(args.input_tsv, "r") as f:
         }
 
         for dim in vbench_dimensions:
-            dim_output = os.path.join(args.output_path, dim)
+            dim_output = os.path.join("evaluate_result", dim)
             os.makedirs(dim_output, exist_ok=True)
 
             try:
@@ -83,7 +83,7 @@ with open(args.input_tsv, "r") as f:
 # Write output.txt
 with open(output_file, "w", newline="") as f:
     writer = csv.DictWriter(f, fieldnames=["videoid", "Imgurl"] + vbench_dimensions)
-    writer.writeheader()
+    #writer.writeheader()
     writer.writerows(results)
 
 print(f"[FINISHED] Wrote {len(results)} rows to {output_file}")
