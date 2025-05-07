@@ -274,15 +274,6 @@ index af962b7..e47a6c9 100644
      
  
      def get_frames_from_img_folder(self, img_folder):
-@@ -84,7 +116,7 @@ class MotionSmoothness:
-         network_name = network_cfg.name
-         print(f'Loading [{network_name}] from [{ckpt_path}]...')
-         self.model = build_from_cfg(network_cfg)
--        ckpt = torch.load(ckpt_path, map_location="cpu", weights_only=False)
-+        ckpt = torch.load(ckpt_path, map_location="cpu")
-         self.model.load_state_dict(ckpt['state_dict'])
-         self.model = self.model.to(self.device)
-         self.model.eval()
 -- 
 2.49.0
 
