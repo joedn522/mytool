@@ -40,14 +40,17 @@ def convert_to_mp4_worker(video_list, queue, max_queue_size):
                     ], check=True)
                     conversion_time = time.time() - start_time
                     queue.put((video_path, mp4_path, conversion_time))
-                except subprocess.CalledProcessError:
-                    print(f"[ERROR] Failed to convert {video_path}")
+                    print(f"[DEBUG] Converted {video_path} to {mp4_path} in {conversion_time:.2f}s")
+                except subprocess.CalledProcessError as e:
+                    print(f"[ERROR] Failed to convert {video_path}: {e}")
                     queue.put((video_path, None, None))
             else:
                 queue.put((video_path, mp4_path, 0))  # Already converted
+                print(f"[DEBUG] {mp4_path} already exists, skipping conversion.")
 
         # 控制轉檔與處理的進度差距
         while queue.qsize() >= max_queue_size:
+            print(f"[DEBUG] Queue size {queue.qsize()} reached max limit {max_queue_size}, waiting...")
             time.sleep(1)  # 等待 process_dimension 消耗隊列
 
 def process_dimension(video_path, mp4_path, dim, dim_output):
@@ -73,10 +76,13 @@ def process_video_worker(queue, results, debug_logs):
     while not queue.empty() or not queue._closed:
         try:
             video_path, mp4_path, conversion_time = queue.get(timeout=5)
-        except:
+            print(f"[DEBUG] Processing video {video_path}, converted to {mp4_path}")
+        except Exception as e:
+            print(f"[DEBUG] Queue is empty or closed: {e}")
             continue  # 等待新的轉檔結果
 
         if not mp4_path:
+            print(f"[DEBUG] Skipping video {video_path} due to failed conversion.")
             continue  # 跳過轉檔失敗的視頻
 
         score_row = {
@@ -95,7 +101,12 @@ def process_video_worker(queue, results, debug_logs):
                 for dim in vbench_dimensions
             ]
             for dim, result in zip(vbench_dimensions, dim_results):
-                dim_times[dim] = result.get()
+                try:
+                    dim_times[dim] = result.get()
+                    print(f"[DEBUG] Processed dimension {dim} for video {video_path} in {dim_times[dim]:.2f}s")
+                except Exception as e:
+                    print(f"[ERROR] Failed to process dimension {dim} for video {video_path}: {e}")
+                    dim_times[dim] = -1
 
         # Collect results
         for dim in vbench_dimensions:
@@ -110,6 +121,7 @@ def process_video_worker(queue, results, debug_logs):
         # 清理轉檔後的 mp4 文件
         if mp4_path.startswith("./tmp") and os.path.exists(mp4_path):
             os.remove(mp4_path)
+            print(f"[DEBUG] Removed temporary file {mp4_path}")
 
 def main():
     results = Manager().list()
@@ -120,14 +132,17 @@ def main():
     with open(args.input_tsv, "r") as f:
         reader = csv.reader(f, delimiter="\t")
         video_list = [row[0] for row in reader if len(row) >= 4]
+        print(f"[DEBUG] Loaded {len(video_list)} videos from input file.")
 
     # 啟動轉檔進程
     convert_process = Pool(processes=1)
     convert_process.apply_async(convert_to_mp4_worker, (video_list, queue, args.max_queue_size))
+    print("[DEBUG] Started convert_to_mp4_worker process.")
 
     # 啟動處理進程
     process_pool = Pool(processes=args.max_video_processes)
     process_pool.apply_async(process_video_worker, (queue, results, debug_logs))
+    print("[DEBUG] Started process_video_worker process.")
 
     convert_process.close()
     convert_process.join()
@@ -137,11 +152,14 @@ def main():
     # Write results to output file
     with open(output_file, "w", newline="") as f:
         writer = csv.DictWriter(f, fieldnames=["videoid", "Imgurl"] + vbench_dimensions, delimiter="\t")
+        writer.writeheader()
         writer.writerows(results)
+        print(f"[DEBUG] Wrote results to {output_file}")
 
     # Write debug logs to debug file
     with open(debug_file, "w") as f:
         f.write("\n".join(debug_logs))
+        print(f"[DEBUG] Wrote debug logs to {debug_file}")
 
     print(f"[FINISHED] Wrote {len(results)} rows to {output_file}")
     print(f"[DEBUG] Logs written to {debug_file}")
