@@ -25,9 +25,11 @@ debug_file = os.path.join(args.output_path, "debug.txt")
 # Semaphore to limit the number of concurrent video processes
 video_semaphore = Semaphore(args.max_video_processes)
 
+# 在 convert_to_mp4_worker 中增加日誌
 def convert_to_mp4_worker(video_list, queue, max_queue_size):
     """Worker to convert videos to mp4."""
     for video_path in video_list:
+        print(f"[DEBUG] Starting conversion for video: {video_path}")
         if video_path.endswith(".mov"):
             mp4_path = os.path.join("./tmp", os.path.basename(video_path) + ".mp4")
             if not os.path.exists(mp4_path):
@@ -47,11 +49,8 @@ def convert_to_mp4_worker(video_list, queue, max_queue_size):
             else:
                 queue.put((video_path, mp4_path, 0))  # Already converted
                 print(f"[DEBUG] {mp4_path} already exists, skipping conversion.")
-
-        # 控制轉檔與處理的進度差距
-        while queue.qsize() >= max_queue_size:
-            print(f"[DEBUG] Queue size {queue.qsize()} reached max limit {max_queue_size}, waiting...")
-            time.sleep(1)  # 等待 process_dimension 消耗隊列
+        else:
+            print(f"[DEBUG] Skipping non-mov file: {video_path}")
 
 def process_dimension(video_path, mp4_path, dim, dim_output):
     """Process a single dimension for a video."""
@@ -71,6 +70,7 @@ def process_dimension(video_path, mp4_path, dim, dim_output):
         print(f"[ERROR] Failed to process dimension {dim} for video {video_path}")
         return None
 
+# 在 process_video_worker 中增加日誌
 def process_video_worker(queue, results, debug_logs):
     """Worker to process videos."""
     while not queue.empty() or not queue._closed:
@@ -84,6 +84,8 @@ def process_video_worker(queue, results, debug_logs):
         if not mp4_path:
             print(f"[DEBUG] Skipping video {video_path} due to failed conversion.")
             continue  # 跳過轉檔失敗的視頻
+
+        print(f"[DEBUG] Starting dimension processing for video: {video_path}")
 
         score_row = {
             "videoid": os.path.basename(video_path),
@@ -134,6 +136,7 @@ def main():
         video_list = [row[0] for row in reader if len(row) >= 4]
         print(f"[DEBUG] Loaded {len(video_list)} videos from input file.")
 
+    print(f"[DEBUG] Video list: {video_list}")
     # 啟動轉檔進程
     convert_process = Pool(processes=1)
     convert_process.apply_async(convert_to_mp4_worker, (video_list, queue, args.max_queue_size))
