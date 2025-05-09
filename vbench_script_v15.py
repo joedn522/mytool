@@ -88,13 +88,20 @@ def run_vbench(mp4_path, dim, out_dir):
         return -1.0
 
 # ───────────────────── consumer: process video ───────────────────────
-def process_video_worker(q: Queue, results, dbg):
+def process_video_worker(q: Queue, results, dbg, dbg_file_path):
+    def append_debug_log(message):
+        """即時更新 debug log 並打印到控制台"""
+        dbg.append(message)
+        with open(dbg_file_path, "a") as dbg_file:
+            dbg_file.write(message + "\n")
+        print(message, flush=True)
+
     while True:
-        vpath, mp4, conv_t = q.get()      # blocking
+        vpath, mp4, conv_t = q.get()  # blocking
         if vpath == "__DONE__":
             break
-        if not mp4:                       # 轉檔失敗
-            dbg.append(f"{vpath}\tconvert_failed")
+        if not mp4:  # 轉檔失敗
+            append_debug_log(f"{vpath}\tconvert_failed")
             continue
 
         row = {"videoid": os.path.basename(vpath), "Imgurl": vpath}
@@ -106,16 +113,16 @@ def process_video_worker(q: Queue, results, dbg):
             odir = os.path.join(out_root, dim)
             os.makedirs(odir, exist_ok=True)
             times[dim] = run_vbench(mp4, dim, odir)
-            row[dim]   = times[dim]
+            row[dim] = times[dim]
 
         results.append(row)
-        dbg.append(f"{vpath}\tconv:{conv_t:.2f}s\t"
-                   f"motion:{times['motion_smoothness']:.2f}s\t"
-                   f"dynamic:{times['dynamic_degree']:.2f}s")
+        append_debug_log(f"{vpath}\tconv:{conv_t:.2f}s\t"
+                         f"motion:{times['motion_smoothness']:.2f}s\t"
+                         f"dynamic:{times['dynamic_degree']:.2f}s")
 
         if mp4.startswith(TMP_DIR) and os.path.exists(mp4):
             os.remove(mp4)
-            print(f"[CLEAN ]  {mp4}", flush=True)
+            append_debug_log(f"[CLEAN ]  {mp4}")
 
 # ─────────────────────────── main ───────────────────────────
 def main():
@@ -125,9 +132,13 @@ def main():
     print(f"[MAIN   ]  loaded {len(vids)} videos")
 
     with Manager() as m:
-        q       = m.Queue(maxsize=args.max_queue_size)
+        q = m.Queue(maxsize=args.max_queue_size)
         results = m.list()
-        dbg     = m.list()
+        dbg = m.list()
+
+        # 清空 debug 檔案
+        with open(DBG_FILE, "w") as f:
+            f.write("")
 
         prod = Process(target=convert_to_mp4_worker,
                        args=(vids, q, args.max_video_processes))
@@ -135,7 +146,7 @@ def main():
 
         workers = []
         for _ in range(args.max_video_processes):
-            p = Process(target=process_video_worker, args=(q, results, dbg))
+            p = Process(target=process_video_worker, args=(q, results, dbg, DBG_FILE))
             p.start()
             workers.append(p)
 
@@ -147,8 +158,6 @@ def main():
         fieldnames = ["videoid", "Imgurl"] + VBENCH_DIMS
         with open(OUT_FILE, "w", newline="") as f:
             csv.DictWriter(f, fieldnames, delimiter="\t").writerows(results)
-        with open(DBG_FILE, "w") as f:
-            f.write("\n".join(dbg))
 
     print(f"[DONE   ]  rows={len(results)}  →  {OUT_FILE}")
     print(f"[DONE   ]  debug → {DBG_FILE}")
