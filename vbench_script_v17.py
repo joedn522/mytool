@@ -89,10 +89,9 @@ def run_vbench(mp4_path, dim, out_dir):
         return -1.0
 
 # ───────────────────── consumer: process video ───────────────────────
-def process_video_worker(q: Queue, results, dbg, dbg_file_path):
+def process_video_worker(q: Queue, results, dbg_file_path):
     def append_debug_log(message):
-        """即時更新 debug log 並打印到控制台"""
-        dbg.append(message)
+        """即時寫入 debug.txt 並同步印出"""
         with open(dbg_file_path, "a") as dbg_file:
             dbg_file.write(message + "\n")
         print(message, flush=True)
@@ -116,7 +115,7 @@ def process_video_worker(q: Queue, results, dbg, dbg_file_path):
             times[dim] = run_vbench(mp4, dim, odir)
             row[dim] = times[dim]
 
-        results.append(row)
+        results.append(row)      # Manager.list() → 跨進程低頻寫入，可接受
         append_debug_log(f"{vpath}\tconv:{conv_t:.2f}s\t"
                          f"motion:{times['motion_smoothness']:.2f}s\t"
                          f"dynamic:{times['dynamic_degree']:.2f}s")
