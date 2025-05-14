@@ -1,30 +1,10 @@
-import pickle
-import torch
-import torch.serialization
 import os
-from collections import OrderedDict
+import importlib
 
 # ------------------------------------------------------------------
-# 1) 讓 torch.load() 自動 fallback  →  你原本就有
-# ------------------------------------------------------------------
-torch.serialization.add_safe_globals([OrderedDict])
-
-_original_torch_load = torch.load
-def patched_torch_load(*args, **kwargs):
-    try:
-        return _original_torch_load(*args, **kwargs)
-    except pickle.UnpicklingError:
-        print("[Patch] Caught UnpicklingError, retrying torch.load with weights_only=False")
-        kwargs["weights_only"] = False
-        return _original_torch_load(*args, **kwargs)
-
-torch.load = patched_torch_load
-
-# ------------------------------------------------------------------
-# 2) **關掉單進程時的 torch.distributed.init_process_group**
+# 1) **關掉單進程時的 torch.distributed.init_process_group**
 #    => 避免重複監聽 29500
 # ------------------------------------------------------------------
-import importlib, types
 dist_mod = importlib.import_module("vbench.distributed")
 
 def patched_dist_init():
@@ -37,10 +17,10 @@ def patched_dist_init():
 # 先把原函式備份，然後替換
 if not hasattr(dist_mod, "_orig_dist_init"):
     dist_mod._orig_dist_init = dist_mod.dist_init
-    dist_mod.dist_init      = patched_dist_init
+    dist_mod.dist_init = patched_dist_init
 
 # ------------------------------------------------------------------
-# 3) 呼叫原生 evaluate CLI
+# 2) 呼叫原生 evaluate CLI
 # ------------------------------------------------------------------
 from vbench.launch import evaluate
 evaluate.main()
