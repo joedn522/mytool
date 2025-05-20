@@ -203,11 +203,6 @@ def main():
 
         prod.join()
         for w in workers: w.join()
-
-        # 持續將結果寫入 OUT_FILE
-        with open(OUT_FILE, "a", newline="") as f:
-            writer = csv.writer(f, delimiter="\t")
-            writer.writerows([[row["videoid"], row["Imgurl"], row["motion_smoothness"], row["dynamic_degree"]] for row in results])
     
     print(f"[DONE] → {OUT_FILE}\n[DONE] debug → {DBG_FILE}")
 
