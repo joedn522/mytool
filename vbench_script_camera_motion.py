@@ -16,7 +16,6 @@ parser.add_argument("--skip_conversion", action="store_true", help="Skip .mov to
 args = parser.parse_args()
 
 # ───────────── constants ─────────────
-VBENCH_DIMS = ["motion_smoothness", "dynamic_degree"]
 TMP_DIR = "./tmp"
 SENTINEL = ("__DONE__", None, None, None, None)
 
@@ -168,13 +167,9 @@ def main():
     # 讀取 input_tsv，過濾掉已處理的檔案
     with open(args.input_tsv) as f:
         for r in csv.reader(f, delimiter="\t"):
-            if len(r) < 4: continue
-            vpath, vid, vq, vurl = r[:4]
-            try:
-                vq = float(vq)
-            except ValueError:
-                continue
-            if vq > .3 or not os.path.exists(vpath):
+            if len(r) < 5: continue  # 確保有足夠的欄位
+            vpath, vid, _, _, vurl = r[:5]  # 忽略 motion_smoothness 和 dynamic_degree
+            if not os.path.exists(vpath):
                 skipped.append({"videoid": vid, "Imgurl": vurl, "camera_motion": "skipped"})
                 continue
             if vid in processed_videos:
