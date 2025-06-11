@@ -127,7 +127,7 @@ def run_vbench_batch(batch_rows, odir, batch_idx):
 def run_vbench(mp4, odir):
     """return (predict_type, elapsed, err_msg, stderr_text)"""
     cmd = [
-        "python", "./vbench_cust/evaluate_i2v.py,
+        "python", "./vbench_cust/evaluate_i2v.py",
         "--videos_path", mp4,
         "--mode", "custom_input",
         "--dimension", "camera_motion",
