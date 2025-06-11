@@ -88,7 +88,7 @@ def run_vbench_batch(batch_rows, odir, batch_idx):
 
     # (2) 呼叫 evaluate_i2v
     cmd = [
-        "python", "../VBench/evaluate_i2v.py",
+        "python", "./vbench_cust/evaluate_i2v.py",
         "--videos_path", batch_tsv,
         "--mode", "custom_input",
         "--dimension", "camera_motion",
