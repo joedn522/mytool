@@ -5,6 +5,7 @@ import os, csv, time, json, argparse, subprocess
 from multiprocessing import Process, Manager, Queue
 import imageio_ffmpeg
 import socket, contextlib
+import uuid, tempfile
 
 # ───────────── argparse ─────────────
 parser = argparse.ArgumentParser()
@@ -24,6 +25,7 @@ os.makedirs(TMP_DIR, exist_ok=True)
 
 OUT_FILE = os.path.join(args.output_path, "output.txt")
 DBG_FILE = os.path.join(args.output_path, "debug.txt")
+BATCH_SIZE = 50                                           # 一批幾支影片
 
 def get_free_port():
     with contextlib.closing(socket.socket(socket.AF_INET, socket.SOCK_STREAM)) as s:
@@ -66,10 +68,6 @@ def convert_to_mp4_worker(task_list, q: Queue, n_consumer: int):
         for _ in range(n_consumer):
             q.put(SENTINEL)
 
-# ====== 先放在檔案前半段 (import 之後) 的共用設定 ======
-BATCH_SIZE = 10                                           # 一批幾支影片
-import uuid, tempfile
-
 # --------------------------------------------------------
 # 把「一批影片」丟給 VBench 的小工具
 # --------------------------------------------------------
@@ -80,6 +78,9 @@ def run_vbench_batch(batch_rows, odir, batch_idx):
     batch_idx  : 第幾批 (1-based)
     return     : dict {video_id: predict_type 或 error_tag}
     """
+    # 計時開始
+    batch_start_time = time.time()
+
     # (1) 生成暫存 .tsv，evaluate_i2v 現在能直接吃
     batch_tsv = os.path.join(odir, f"batch_{batch_idx:03d}.tsv")
     with open(batch_tsv, "w") as f:
@@ -108,14 +109,19 @@ def run_vbench_batch(batch_rows, odir, batch_idx):
 
     # (4) 轉成 {basename: predict_str}
     name2pred = {
-        os.path.basename(r["video_path"]):
+        os.path.abspath(r["video_path"]):
         ";".join(r.get("predict_type", []))
         for r in res
     }
     # (5) 回到 {video_id: predict}
     out = {}
     for mp4, vid, _ in batch_rows:
-        out[vid] = name2pred.get(os.path.basename(mp4), "PARSE_FAIL")
+        out[vid] = name2pred.get(os.path.abspath(mp4), "PARSE_FAIL")
+
+    # 計時結束
+    batch_elapsed_time = time.time() - batch_start_time
+    print(f"[BATCH] Batch {batch_idx:03d} processed in {batch_elapsed_time:.2f}s", flush=True)
+
     return out
 
 def run_vbench(mp4, odir):
