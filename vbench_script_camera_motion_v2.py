@@ -25,7 +25,7 @@ os.makedirs(TMP_DIR, exist_ok=True)
 
 OUT_FILE = os.path.join(args.output_path, "output.txt")
 DBG_FILE = os.path.join(args.output_path, "debug.txt")
-BATCH_SIZE = 100                                           # 一批幾支影片
+BATCH_SIZE = 200                                           # 一批幾支影片
 
 def get_free_port():
     with contextlib.closing(socket.socket(socket.AF_INET, socket.SOCK_STREAM)) as s:
