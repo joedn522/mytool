@@ -25,7 +25,7 @@ os.makedirs(TMP_DIR, exist_ok=True)
 
 OUT_FILE = os.path.join(args.output_path, "output.txt")
 DBG_FILE = os.path.join(args.output_path, "debug.txt")
-BATCH_SIZE = 50                                           # 一批幾支影片
+BATCH_SIZE = 100                                           # 一批幾支影片
 
 def get_free_port():
     with contextlib.closing(socket.socket(socket.AF_INET, socket.SOCK_STREAM)) as s:
@@ -162,7 +162,7 @@ def run_vbench(mp4, odir):
     return predict_types_str, et, "", err_txt
 
 # --------------------------------------------------------
-# NEW consumer —— 每 50 片 flush 一批
+# NEW consumer —— 每 batch 片 flush 一批
 # --------------------------------------------------------
 def consumer(q: Queue, results, dbg, total_tasks):
     def log(msg): print(msg, file=open(dbg, "a"), flush=True)
