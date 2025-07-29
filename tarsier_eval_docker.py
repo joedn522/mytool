@@ -53,8 +53,9 @@ def run(args: Namespace):
             tarsier_text = m.group(1).strip() if m else pred.strip()
 
             # append to results (vid, file_path, tarsier_text) tab-separated, no header
+            safe_text = tarsier_text.replace('\t', ' ').replace('\n', ' ')
             with out_path.open("a", newline="") as f_out:
-                f_out.write(f"{videoid}\t{localpath}\t{tarsier_text.replace('\t', ' ').replace('\n', ' ')}\n")
+                f_out.write(f"{videoid}\t{localpath}\t{safe_text}\n")
             processed.add(videoid)
             print(f"✓ Done {videoid}")
 
