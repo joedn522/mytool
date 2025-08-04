@@ -11,7 +11,6 @@ def run(args: Namespace):
     data_path = Path(args.data)
     out_path = Path(args.out)
     outlog_path = Path(args.outlog) if hasattr(args, "outlog") and args.outlog else None
-    batch_size = 3
 
     processed = set()
     if out_path.exists():
@@ -46,58 +45,50 @@ def run(args: Namespace):
     print(f"Already processed (in out_path): {already_processed}")
     print(f"To process this run: {to_process}")
 
-    batch = []
     for idx, row in enumerate(all_rows, 1):
         localpath, videoid = row[0], row[1]
         if videoid in processed:
             continue
-        batch.append((localpath, videoid))
-        if len(batch) == batch_size or idx == total_rows:
-            msg = f"\n=== Processing batch {idx-batch_size+1}-{idx} ({idx}/{total_rows}) ==="
-            print(msg)
-            log_write(msg)
-            start_time = time.time()
+        video_fp = Path(localpath)
+        msg = f"\n=== Processing {videoid} ({idx}/{total_rows}) ==="
+        print(msg)
+        log_write(msg)
+        start_time = time.time()
 
-            input_paths = [str(Path(localpath)) for localpath, _ in batch]
-            videoids = [videoid for _, videoid in batch]
+        # call Tarsier inference
+        cmd = [
+            sys.executable, "-m", "tasks.inference_quick_start",
+            "--model_name_or_path", args.tarsier_checkpoints,
+            "--instruction", "Describe the camera motion in detail.",
+            "--input_path", str(video_fp),
+            "--temperature", "0", "--top_p", "0"
+        ]
+        if args.device != "cpu":
+            os.environ["CUDA_VISIBLE_DEVICES"] = args.device.split(":")[-1]
+        try:
+            pred = subprocess.check_output(cmd, text=True, stderr=subprocess.STDOUT)
+            log_write(f"[{videoid}] STDOUT:\n{pred}")
+        except subprocess.CalledProcessError as e:
+            print(e.output, file=sys.stderr)
+            log_write(f"[{videoid}] ERROR:\n{e.output}")
+            pred = "ERROR: inference failed"
 
-            # call Tarsier inference (assume tasks.inference_quick_start supports batch input)
-            cmd = [
-                sys.executable, "-m", "tasks.inference_quick_start",
-                "--model_name_or_path", args.tarsier_checkpoints,
-                "--instruction", "Describe the camera motion in detail.",
-                "--input_path"
-            ] + input_paths + [
-                "--temperature", "0", "--top_p", "0"
-            ]
-            if args.device != "cpu":
-                os.environ["CUDA_VISIBLE_DEVICES"] = args.device.split(":")[-1]
-            try:
-                pred = subprocess.check_output(cmd, text=True, stderr=subprocess.STDOUT)
-                log_write(f"[{','.join(videoids)}] STDOUT:\n{pred}")
-            except subprocess.CalledProcessError as e:
-                print(e.output, file=sys.stderr)
-                log_write(f"[{','.join(videoids)}] ERROR:\n{e.output}")
-                pred = "ERROR: inference failed"
+        # crude extraction of the last ###Prediction block
+        m = re.search(r"###Prediction:\s*(.*)\Z", pred, re.S)
+        tarsier_text = m.group(1).strip() if m else pred.strip()
 
-            # crude extraction for each video in batch
-            predictions = re.findall(r"###Prediction:\s*(.*?)(?=###Prediction:|\Z)", pred, re.S)
-            # fallback: if not enough predictions, fill with error
-            while len(predictions) < len(batch):
-                predictions.append("ERROR: inference failed")
+        # append to results (vid, file_path, tarsier_text) tab-separated, no header
+        safe_text = tarsier_text.replace('\t', ' ').replace('\n', ' ')
+        with out_path.open("a", newline="") as f_out:
+            f_out.write(f"{videoid}\t{localpath}\t{safe_text}\n")
+        processed.add(videoid)
 
-            for (localpath, videoid), tarsier_text in zip(batch, predictions):
-                safe_text = tarsier_text.strip().replace('\t', ' ').replace('\n', ' ')
-                with out_path.open("a", newline="") as f_out:
-                    f_out.write(f"{videoid}\t{localpath}\t{safe_text}\n")
-                processed.add(videoid)
-                elapsed = time.time() - start_time
-                msg = f"✓ Done {videoid} | Time: {elapsed:.2f} sec\nSafe text: {safe_text}"
-                print(msg)
-                log_write(msg)
+        elapsed = time.time() - start_time
+        msg = f"✓ Done {videoid} | Time: {elapsed:.2f} sec\nSafe text: {safe_text}"
+        print(msg)
+        log_write(msg)
 
-            batch = []
-            time.sleep(args.sleep)
+        time.sleep(args.sleep)
 
 def cli() -> Namespace:
     p = ArgumentParser()
