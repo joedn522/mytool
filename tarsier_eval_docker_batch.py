@@ -55,39 +55,54 @@ def run_one(video_fp: Path, vid: str,
     safe_write(outlog, log) if outlog else None
     return vid
 
-
+def init_multiple_models(ckpt: str, cfg_path: str, device: str, num_models: int):
+    models = []
+    processors = []
+    for i in range(num_models):
+        cfg = yaml.safe_load(open(cfg_path, "r"))
+        model, processor = load_model_and_processor(ckpt, data_config=cfg)
+        model.to(device).eval().half()
+        models.append(model)
+        processors.append(processor)
+        print(f"[Model {i}] Initialized on {device}, memory: {torch.cuda.memory_allocated(device) / 1024**2:.2f} MB")
+    return models, processors
 # ---------- main ----------
 def main(args):
-    # ① 解析裝置並設環境變數  ────────────────────────
+    # ① 解析裝置並設環境變數 ────────────────────────
     devices: List[str] = [d.strip() for d in args.device.split(",")]
     os.environ["CUDA_VISIBLE_DEVICES"] = ",".join([d.split(":")[-1] for d in devices])
+    out_path = Path(args.out)
+    outlog = Path(args.outlog) if args.outlog else None
 
-    out_path  = Path(args.out)
-    outlog    = Path(args.outlog) if args.outlog else None
+
     data_rows = [row for row in csv.reader(Path(args.data).open(), delimiter="\t") if len(row) >= 2]
-
-    done = {line.split("\t", 1)[0] for line in out_path.open() } if out_path.exists() else set()
+    done = {line.split("\t", 1)[0] for line in out_path.open()} if out_path.exists() else set()
     todo = [row for row in data_rows if row[1] not in done]
-
     print(f"Total {len(data_rows)} | Already {len(done)} | To-run {len(todo)}")
 
-    # ── init model once ──
-    devices: List[str] = args.device.split(",")  # 支援 cuda:0,cuda:1
-    model, processor   = init_model(args.ckpt, args.config, devices[0])
+
+    # ── 初始化多个模型 ──
+    num_models = min(args.workers, len(todo))  # 控制模型数量不超过任务数
+    models, processors = init_multiple_models(args.ckpt, args.config, devices[0], num_models)
+
 
     # ── pool ──
     prompt = "Describe the camera motion in detail."
-    device_cycle = cycle(devices)            # 若只給一張卡就永遠取同一張
+    model_cycle = cycle(zip(models, processors))
+
 
     with ThreadPoolExecutor(max_workers=args.workers) as pool:
         fut2vid = {
-            pool.submit(run_one, Path(r[0]), r[1],
-                        model, processor, next(device_cycle),
-                        prompt, out_path, outlog): r[1]
-            for r in todo
+            pool.submit(
+                run_one,
+                Path(r[0]), r[1],
+                m, p, devices[0],
+                prompt, out_path, outlog
+            ): r[1]
+            for r, (m, p) in zip(todo, model_cycle)
         }
         for fut in as_completed(fut2vid):
-            fut.result()   # exceptions re-raised here
+            fut.result()  # exceptions re-raised here
 
 
 # ---------- CLI ----------
