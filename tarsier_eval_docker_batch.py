@@ -5,7 +5,8 @@ import csv, os, re, sys, time, yaml, argparse, threading
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import List
-from itertools import cycle       
+from itertools import cycle   
+import multiprocessing as mp    
 
 import torch
 from tasks.utils import load_model_and_processor
@@ -66,9 +67,19 @@ def init_multiple_models(ckpt: str, cfg_path: str, device: str, num_models: int)
         processors.append(processor)
         print(f"[Model {i}] Initialized on {device}, memory: {torch.cuda.memory_allocated(device) / 1024**2:.2f} MB")
     return models, processors
+
+# ---------- worker ----------
+def worker_run(task_queue, device, ckpt, config, prompt, out_path, outlog):
+    model, processor = init_model(ckpt, config, device)
+    while not task_queue.empty():
+        try:
+            video_fp, vid = task_queue.get_nowait()
+        except:
+            break
+        run_one(video_fp, vid, model, processor, device, prompt, out_path, outlog)
+
 # ---------- main ----------
 def main(args):
-    # ① 解析裝置並設環境變數 ────────────────────────
     devices: List[str] = [d.strip() for d in args.device.split(",")]
     os.environ["CUDA_VISIBLE_DEVICES"] = ",".join([d.split(":")[-1] for d in devices])
     out_path = Path(args.out)
@@ -81,29 +92,29 @@ def main(args):
     print(f"Total {len(data_rows)} | Already {len(done)} | To-run {len(todo)}")
 
 
-    # ── 初始化多个模型 ──
-    num_models = min(args.workers, len(todo))  # 控制模型数量不超过任务数
-    models, processors = init_multiple_models(args.ckpt, args.config, devices[0], num_models)
+    # ── 初始化任务队列 ──
+    task_queue = mp.Queue()
+    for row in todo:
+        task_queue.put((Path(row[0]), row[1]))
 
 
-    # ── pool ──
+    # ── 启动多个进程，每个进程加载自己的模型 ──
     prompt = "Describe the camera motion in detail."
-    model_cycle = cycle(zip(models, processors))
+    num_workers = min(args.workers, len(todo))
+    processes = []
 
 
-    with ThreadPoolExecutor(max_workers=args.workers) as pool:
-        fut2vid = {
-            pool.submit(
-                run_one,
-                Path(r[0]), r[1],
-                m, p, devices[0],
-                prompt, out_path, outlog
-            ): r[1]
-            for r, (m, p) in zip(todo, model_cycle)
-        }
-        for fut in as_completed(fut2vid):
-            fut.result()  # exceptions re-raised here
+    for i in range(num_workers):
+        p = mp.Process(
+            target=worker_run,
+            args=(task_queue, devices[0], args.ckpt, args.config, prompt, out_path, outlog)
+        )
+        p.start()
+        processes.append(p)
 
+
+    for p in processes:
+        p.join()
 
 # ---------- CLI ----------
 def parse_cli():
@@ -119,4 +130,6 @@ def parse_cli():
 
 
 if __name__ == "__main__":
+    import multiprocessing as mp
+    mp.set_start_method("spawn")
     main(parse_cli())
