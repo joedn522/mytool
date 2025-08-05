@@ -131,5 +131,8 @@ def parse_cli():
 
 if __name__ == "__main__":
     import multiprocessing as mp
-    mp.set_start_method("spawn")
+    try:
+        mp.set_start_method("spawn", force=True)
+    except RuntimeError:
+        pass  # 已設定過就略過
     main(parse_cli())
