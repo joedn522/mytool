@@ -80,29 +80,28 @@ def worker_run(task_queue, device, ckpt, config, prompt, out_path, outlog):
 
 # ---------- main ----------
 def main(args):
+    import time
+    start_time = time.time()
+
     devices: List[str] = [d.strip() for d in args.device.split(",")]
     os.environ["CUDA_VISIBLE_DEVICES"] = ",".join([d.split(":")[-1] for d in devices])
     out_path = Path(args.out)
     outlog = Path(args.outlog) if args.outlog else None
-
 
     data_rows = [row for row in csv.reader(Path(args.data).open(), delimiter="\t") if len(row) >= 2]
     done = {line.split("\t", 1)[0] for line in out_path.open()} if out_path.exists() else set()
     todo = [row for row in data_rows if row[1] not in done]
     print(f"Total {len(data_rows)} | Already {len(done)} | To-run {len(todo)}")
 
-
     # ── 初始化任务队列 ──
     task_queue = mp.Queue()
     for row in todo:
         task_queue.put((Path(row[0]), row[1]))
 
-
     # ── 启动多个进程，每个进程加载自己的模型 ──
     prompt = "Describe the camera motion in detail."
     num_workers = min(args.workers, len(todo))
     processes = []
-
 
     for i in range(num_workers):
         p = mp.Process(
@@ -112,9 +111,17 @@ def main(args):
         p.start()
         processes.append(p)
 
-
     for p in processes:
         p.join()
+
+    # 統計總時間與平均
+    total_time = time.time() - start_time
+    entry_count = len(todo)
+    avg_time = total_time / entry_count if entry_count > 0 else 0
+    print(f"\n=== Summary ===")
+    print(f"Processed entries: {entry_count}")
+    print(f"Total elapsed time: {total_time:.2f} seconds")
+    print(f"Average time per video: {avg_time:.2f} seconds")
 
 # ---------- CLI ----------
 def parse_cli():
