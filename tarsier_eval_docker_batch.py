@@ -33,10 +33,11 @@ def init_model(ckpt: str, cfg_path: str, device: str):
 # ---------- worker ----------
 def run_one(video_fp: Path, vid: str,
             model, processor, device: str,
-            prompt: str, out_path: Path, outlog: Path | None):
+            prompt: str, out_path: Path, outlog: Path | None,
+            max_new_tokens: int = 256):
 
     start = time.time()
-    gen_kwargs = dict(max_new_tokens=256, do_sample=False,
+    gen_kwargs = dict(max_new_tokens=max_new_tokens, do_sample=False,
                       temperature=0, top_p=0, use_cache=True)
 
     try:
@@ -56,6 +57,7 @@ def run_one(video_fp: Path, vid: str,
     safe_write(outlog, log) if outlog else None
     return vid
 
+
 def init_multiple_models(ckpt: str, cfg_path: str, device: str, num_models: int):
     models = []
     processors = []
@@ -69,19 +71,29 @@ def init_multiple_models(ckpt: str, cfg_path: str, device: str, num_models: int)
     return models, processors
 
 # ---------- worker ----------
-def worker_run(task_queue, device, ckpt, config, prompt, out_path, outlog):
+def worker_run(task_queue, device, ckpt, config, prompt, out_path, outlog, max_new_tokens):
     model, processor = init_model(ckpt, config, device)
     while not task_queue.empty():
         try:
             video_fp, vid = task_queue.get_nowait()
         except:
             break
-        run_one(video_fp, vid, model, processor, device, prompt, out_path, outlog)
+        run_one(video_fp, vid, model, processor, device, prompt, out_path, outlog, max_new_tokens)
 
 # ---------- main ----------
 def main(args):
     import time
     start_time = time.time()
+
+    # 印出 input parameter
+    print("\n=== Input Parameters ===")
+    for k, v in vars(args).items():
+        print(f"{k}: {v}")
+
+    # 讀取 data_config 並印出
+    cfg = yaml.safe_load(open(args.config, "r"))
+    print("\n=== data_config ===")
+    print(yaml.dump(cfg, sort_keys=False))
 
     devices: List[str] = [d.strip() for d in args.device.split(",")]
     os.environ["CUDA_VISIBLE_DEVICES"] = ",".join([d.split(":")[-1] for d in devices])
@@ -106,7 +118,7 @@ def main(args):
     for i in range(num_workers):
         p = mp.Process(
             target=worker_run,
-            args=(task_queue, devices[0], args.ckpt, args.config, prompt, out_path, outlog)
+            args=(task_queue, devices[0], args.ckpt, args.config, prompt, out_path, outlog, args.max_new_tokens)
         )
         p.start()
         processes.append(p)
@@ -118,6 +130,15 @@ def main(args):
     total_time = time.time() - start_time
     entry_count = len(todo)
     avg_time = total_time / entry_count if entry_count > 0 else 0
+
+    # 再次印出 input parameter 和 data_config
+    print("\n=== Input Parameters (End) ===")
+    for k, v in vars(args).items():
+        print(f"{k}: {v}")
+
+    print("\n=== data_config (End) ===")
+    print(yaml.dump(cfg, sort_keys=False))
+
     print(f"\n=== Summary ===")
     print(f"Processed entries: {entry_count}")
     print(f"Total elapsed time: {total_time:.2f} seconds")
@@ -133,6 +154,7 @@ def parse_cli():
     ap.add_argument("--config", default="configs/tarser2_default_config.yaml")
     ap.add_argument("--device", default="cuda:0", help="cpu 或多卡 'cuda:0,cuda:1'")
     ap.add_argument("--workers", type=int, default=3, help="並行推理執行緒數")
+    ap.add_argument("--max_new_tokens", type=int, default=256, help="生成最大 token 數")
     return ap.parse_args()
 
 
