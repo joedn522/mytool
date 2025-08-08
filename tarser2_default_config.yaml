@@ -1,23 +1,20 @@
-# ========== 仍需保留的官方欄位 ==========
 max_n_frames: 256
-n_frames: 20                 # ← 改
-max_pixels: 230400           # ← 改
+n_frames: 16
+max_pixels: 230400 # 1280 * 720 // 2
 min_pixels: 0
 max_seq_len: 16384
+is_training: false  # 会影响：1. 训练和测试时采帧不同；2. 测试时忽略 response。
+print_data_error: false
 is_training: false
-print_data_error: false      # ← 改
 do_image_padding: false
 do_image_crop: false
-do_image_resize: true        # ← 改
-resize_short: 256            # ← 新增
+do_image_resize: true
+resize_short: 256  # 新增，图片短边缩放到 256px
 prompt: ""
 train_task: sft
 
-# ========== video_sampling_strategy 覆寫 / 新增 ==========
 video_sampling_strategy:
   video_sampler_version: v1
   center_clip: true
   clip_len_sec: 5
-  sampling_fps: 4
-  force_frames_n_divisible: 4
-  use_multi_images_for_video: false
+  force_frames_n_divisible: 1
