@@ -2,7 +2,11 @@ from typing import Dict, List, Union
 from PIL import Image
 import random
 
-import math, json, shlex, subprocess
+import math, json, shlex, subprocess, re
+try:
+    import imageio_ffmpeg as iio_ffmpeg
+except Exception:
+    iio_ffmpeg = None
 
 from .utils import sample_video, read_image, adjust_bbox, filter_ocr_polygon
 
@@ -210,7 +214,7 @@ class VisionParser:
         return str(v)
 
     def _ffprobe_duration(self, path: str) -> Union[float, None]:
-        """Return duration in seconds using ffprobe; None if unavailable."""
+        """Return duration in seconds via ffprobe; None if unavailable."""
         try:
             cmd = [
                 "ffprobe", "-v", "error",
@@ -244,10 +248,39 @@ class VisionParser:
         except Exception as e:
             print(f"[VisionParser] ffprobe failed: {e}")
             return None
+        
+    def _ffmpeg_duration_via_imageio(self, path: str) -> Union[float, None]:
+        """Return duration using imageio-ffmpeg (parsing `ffmpeg -i` stderr)."""
+        if iio_ffmpeg is None:
+            print("[VisionParser] imageio-ffmpeg not available.")
+            return None
+        try:
+            exe = iio_ffmpeg.get_ffmpeg_exe()
+            # 透過 -i 讀 header，不做轉碼；Duration 會在 stderr
+            proc = subprocess.run(
+                [exe, "-hide_banner", "-i", path, "-f", "null", "-"],
+                stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False
+            )
+            s = proc.stderr.decode("utf-8", "ignore")
+            m = re.search(r"Duration:\s*(\d+):(\d+):(\d+(?:\.\d+)?)", s)
+            if not m:
+                return None
+            hh, mm, ss = int(m.group(1)), int(m.group(2)), float(m.group(3))
+            return hh * 3600 + mm * 60 + ss
+        except Exception as e:
+            print(f"[VisionParser] imageio-ffmpeg probe failed: {e}")
+            return None
+
+    def _get_duration(self, path: str) -> Union[float, None]:
+        # 先嘗試 ffprobe，失敗再用 imageio-ffmpeg
+        d = self._ffprobe_duration(path)
+        if d is not None and d > 0:
+            return d
+        return self._ffmpeg_duration_via_imageio(path)
 
     def _center_window(self, video_path: Union[str, Dict], sec: float):
         p = self._pick_path(video_path)
-        dur = self._ffprobe_duration(p)
+        dur = self._get_duration(p)
         if dur is None or dur <= 0:
             print("[VisionParser] No duration from ffprobe; skip center_window.")
             return None
