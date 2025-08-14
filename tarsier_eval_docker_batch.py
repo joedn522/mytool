@@ -14,11 +14,17 @@ from tasks.inference_quick_start import process_one
 
 
 # ---------- util ----------
-def safe_write(path: Path | None, txt: str):
+def safe_write(path: Path | None, txt: str, lock=None):
     if not path:
         return
     path.parent.mkdir(parents=True, exist_ok=True)
-    with threading.Lock():
+    if lock:
+        with lock:
+            with path.open("a", encoding="utf-8") as f:
+                f.write(txt + "\n")
+                f.flush()
+                os.fsync(f.fileno())
+    else:
         with path.open("a", encoding="utf-8") as f:
             f.write(txt + "\n")
 
@@ -34,7 +40,7 @@ def init_model(ckpt: str, cfg_path: str, device: str):
 def run_one(video_fp: Path, vid: str,
             model, processor, device: str,
             prompt: str, out_path: Path, outlog: Path | None,
-            max_new_tokens: int = 256):
+            max_new_tokens: int = 256, file_lock=None):
 
     start = time.time()
     gen_kwargs = dict(max_new_tokens=max_new_tokens, do_sample=False,
@@ -49,12 +55,12 @@ def run_one(video_fp: Path, vid: str,
         pred_txt = msg
 
     clean = pred_txt.replace('\t', ' ').replace('\n', ' ')
-    safe_write(out_path, f"{vid}\t{video_fp}\t{clean}")
+    safe_write(out_path, f"{vid}\t{video_fp}\t{clean}", file_lock)
 
     elapsed = time.time() - start
     log = f"✓ Done {vid} | Time: {elapsed:.2f} s | Safe text: {clean}"
     print(log)
-    safe_write(outlog, log) if outlog else None
+    safe_write(outlog, log, file_lock) if outlog else None
     return vid
 
 
@@ -71,14 +77,14 @@ def init_multiple_models(ckpt: str, cfg_path: str, device: str, num_models: int)
     return models, processors
 
 # ---------- worker ----------
-def worker_run(task_queue, device, ckpt, config, prompt, out_path, outlog, max_new_tokens):
+def worker_run(task_queue, device, ckpt, config, prompt, out_path, outlog, max_new_tokens, file_lock):
     model, processor = init_model(ckpt, config, device)
     while not task_queue.empty():
         try:
             video_fp, vid = task_queue.get_nowait()
         except:
             break
-        run_one(video_fp, vid, model, processor, device, prompt, out_path, outlog, max_new_tokens)
+        run_one(video_fp, vid, model, processor, device, prompt, out_path, outlog, max_new_tokens, file_lock)
 
 # ---------- main ----------
 def main(args):
@@ -114,11 +120,13 @@ def main(args):
     prompt = "Describe the camera motion in detail."
     num_workers = min(args.workers, len(todo))
     processes = []
+    file_lock = mp.Lock()
 
     for i in range(num_workers):
         p = mp.Process(
             target=worker_run,
-            args=(task_queue, devices[0], args.ckpt, args.config, prompt, out_path, outlog, args.max_new_tokens)
+            args=(task_queue, devices[0], args.ckpt, args.config,
+                  prompt, out_path, outlog, args.max_new_tokens, file_lock)
         )
         p.start()
         processes.append(p)
