@@ -35,11 +35,6 @@ def init_model(ckpt: str, cfg_path: str, device: str):
     model.to(device).eval().half()
     return model, processor
 
-SEP_CLEANER = re.compile(r'[\t\r\n\u2028\u2029\x85\x0b\x0c]+')
-
-def sanitize_for_tsv(s: str) -> str:
-    s = SEP_CLEANER.sub(' ', s)
-    return re.sub(r' {2,}', ' ', s).strip()
 
 # ---------- worker ----------
 def run_one(video_fp: Path, vid: str,
@@ -59,7 +54,7 @@ def run_one(video_fp: Path, vid: str,
         safe_write(outlog, msg) if outlog else None
         pred_txt = msg
 
-    clean = sanitize_for_tsv(str(pred_txt))
+    clean = pred_txt.replace('\t', ' ').replace('\n', ' ')
     safe_write(out_path, f"{vid}\t{video_fp}\t{clean}", file_lock)
 
     elapsed = time.time() - start
